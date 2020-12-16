@@ -7,7 +7,11 @@ import java.io.File;
 import java.io.IOException;
 
 import org.apache.commons.io.FileUtils;
-import sdk.Sdk;
+import sdk.EventLog;
+import sdk.BuildSDKResult;
+import sdk.DeployContractResult;
+import sdk.RPCResult;
+import sdk.TxReceipt;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -18,29 +22,54 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        String ipPort = "127.0.0.1:20200";
         String sdkPath = "/sdcard/fiscobcossdk/";                // mkdir by user
-        String confPath = sdkPath + "conf";
-        String groupId = "1";
-        String keyFile = "sdk.key";
         String contractName = "HelloWorld";
-
         try {
             // init sdk
-            Log.i(TAG, "init sdk result : " + BcosSDK.buildSDK(confPath, groupId, ipPort, keyFile));
+            BuildSDKResult buildResult = BcosSDK.buildSDK(sdkPath);
+            if (buildResult.getErrorId() == 0) {
+                Log.i(TAG, "init sdk successfully");
+            } else {
+                Log.e(TAG, "init sdk error : " + buildResult.getErrorInfo());
+                return;
+            }
             // getClientVersion
-            Log.i(TAG, "get node version : " + BcosSDK.getClientVersion());
+            RPCResult result = BcosSDK.getClientVersion();
+            if (result.getErrorInfo().isEmpty()) {
+                Log.i(TAG, "node version: " + result.getQueryResult());
+            } else {
+                Log.i(TAG, "get node version error: " + result.getErrorInfo());
+            }
             // deploy contract
             DeployContractResult deployContractResult = BcosSDK.deployContract(sdkPath, contractName);
             String address = deployContractResult.getAddress();
-            Log.i(TAG, "get contract address : " + address);
+            Log.i(TAG, "contract address : " + address);
             // sendTransaction
             String abiFile = sdkPath + "contract/abi/" + contractName + ".abi";
             String abi = FileUtils.readFileToString(new File(abiFile));
             TxReceipt txReceipt = BcosSDK.sendTransaction(abi, address, "set", "[{\"type\":\"string\", \"value\":\"Hello, FISCO 3 周年!\"}]");
-            Log.i(TAG, "get transaction hash : " + txReceipt.getTransactionHash());
-            Log.i(TAG, "get block number : " + txReceipt.getBlockNumber());
-            Log.i(TAG, "get event log : " + txReceipt.getLogs());
+            String transactionHash = txReceipt.getTransactionHash();
+            Log.i(TAG, "transaction hash : " + transactionHash);
+            Log.i(TAG, "block number : " + txReceipt.getBlockNumber());
+            EventLog[] eventLogs = BcosSDK.getEventLog(txReceipt);
+            Log.i(TAG, "event log , size: " + eventLogs.length);
+            for (EventLog eventLog : eventLogs) {
+                Log.i(TAG, "event log content: " + eventLog);
+            }
+            // getTransactionByHash
+            result = BcosSDK.getTransactionByHash(transactionHash);
+            if (result.getErrorInfo().isEmpty()) {
+                Log.i(TAG, "transaction content: " + result.getQueryResult());
+            } else {
+                Log.i(TAG, "getTransactionByHash error: " + result.getErrorInfo());
+            }
+            // getTransactionReceipt
+            result = BcosSDK.getTransactionReceipt(transactionHash);
+            if (result.getErrorInfo().isEmpty()) {
+                Log.i(TAG, "transaction receipt content: " + result.getQueryResult());
+            } else {
+                Log.i(TAG, "getTransactionReceipt error: " + result.getErrorInfo());
+            }
             // call
             Log.i(TAG, "call transaction result : " + BcosSDK.call(abi, address, "get", "[]"));
         } catch (IOException e) {

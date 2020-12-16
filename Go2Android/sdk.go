@@ -29,8 +29,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type InitSDK struct {
-	Connected			bool		`json:"connected"`
+type BuildSDKResult struct {
+	ErrorId				int			`json:"errorId"`
 	ErrorInfo			string		`json:"errorInfo"`
 }
 
@@ -67,47 +67,55 @@ type TxReceipt struct {
 	LogsBloom			string		`json:"logsBloom"`
 }
 
+type EventLog struct {
+	Removed				bool		`json:"removed"`
+	LogIndex			string		`json:"logIndex" `
+	TransactionIndex	string		`json:"transactionIndex" `
+	TransactionHash		string		`json:"transactionHash"`
+	BlockHash			string		`json:"blockHash"`
+	BlockNumber			string		`json:"blockNumber"`
+	Address				string		`json:"address"`
+	Data				string		`json:"data"`
+	Type				string		`json:"type"`
+	Topics 				[]string	`json:"topics" `
+}
+
+type RPCResult struct {
+	ErrorInfo			string		`json:"errorInfo"`
+	QueryResult			string		`json:"queryResult"`
+}
+
 var clientSdk *client.Client
 
-func BuildSDK(basePath string, groupId string, ipPort string, keyFile string) string {
-	// set config content
-	var config = "[Network]\n" +
-		"Type=\"channel\"\n" +
-		"CAFile=\"" + basePath + "/ca.crt\"\n" +
-		"Cert=\"" + basePath + "/sdk.crt\"\n" +
-		"Key=\"" + basePath + "/sdk.key\"\n" +
-		"[[Network.Connection]]\n" +
-		"NodeURL=\"" + ipPort + "\"\n" +
-		"GroupID=" + groupId + "\n\n" +
-		"[Account]\n" +
-		"KeyFile= \"" + basePath + "/" + keyFile + "\"\n\n" +
-		"[Chain]\n" +
-		"ChainID=1\n" +
-		"SMCrypto=false"
+func BuildSDK(basePath string) string {
 	// connect node
-	configs, err := conf.ParseConfig([]byte(config))
+	configs, err := conf.ParseConfigFile(basePath + "config.toml");
 	if err != nil {
-		buildResult := InitSDK{Connected: false, ErrorInfo: err.Error()}
+		buildResult := BuildSDKResult{ErrorId: -1, ErrorInfo: err.Error()}
 		ret, _ := json.Marshal(buildResult)
 		return string(ret)
 	}
 	clientSdk, err = client.Dial(&configs[0])
 	if err != nil {
-		buildResult := InitSDK{Connected: false, ErrorInfo: err.Error()}
+		buildResult := BuildSDKResult{ErrorId: -1, ErrorInfo: err.Error()}
 		ret, _ := json.Marshal(buildResult)
 		return string(ret)
 	}
-	buildResult := InitSDK{Connected: true, ErrorInfo: ""}
+	buildResult := BuildSDKResult{ErrorId: 0, ErrorInfo: ""}
 	ret, _ := json.Marshal(buildResult)
 	return string(ret)
 }
 
 func GetClientVersion() string {
 	cv, err := clientSdk.GetClientVersion(context.Background())
+	var rpcResult RPCResult
 	if err != nil {
-		return err.Error()
+		rpcResult = RPCResult{QueryResult: "", ErrorInfo: err.Error()}
+	} else {
+		rpcResult = RPCResult{QueryResult: string(cv), ErrorInfo: ""}
 	}
-	return string(cv)
+	ret, _ := json.Marshal(rpcResult)
+	return string(ret)
 }
 
 func DeployContract(abiContract string, binContract string) string {
@@ -200,6 +208,47 @@ func Call(abiContract string, address string, method string, params string) stri
 	}
 	resultBytes, err := json.MarshalIndent(result, "", "\t")
 	return string(resultBytes)
+}
+
+func GetTransactionByHash(txHash string) string {
+	raw, err := clientSdk.GetTransactionByHash(context.Background(), txHash)
+	var rpcResult RPCResult
+	if err != nil {
+		rpcResult = RPCResult{QueryResult: "", ErrorInfo: err.Error()}
+	} else {
+		rpcResult = RPCResult{QueryResult: string(raw), ErrorInfo: ""}
+	}
+	ret, _ := json.Marshal(rpcResult)
+	return string(ret)
+}
+
+func GetTransactionReceipt(txHash string) string {
+	receipt, err := clientSdk.GetTransactionReceipt(context.Background(), txHash)
+	var rpcResult RPCResult
+	if err != nil {
+		rpcResult = RPCResult{QueryResult: "", ErrorInfo: err.Error()}
+	} else {
+		var rec TxReceipt
+		rec.TransactionHash = receipt.TransactionHash
+		rec.TransactionIndex = receipt.TransactionIndex
+		rec.BlockHash = receipt.BlockHash
+		rec.BlockNumber = receipt.BlockNumber
+		rec.GasUsed = receipt.GasUsed
+		rec.ContractAddress = receipt.ContractAddress.Hex()
+		rec.Root = receipt.Root
+		rec.Status = receipt.Status
+		rec.From = receipt.From
+		rec.To = receipt.To
+		rec.Input = receipt.Input
+		rec.Output = receipt.Output
+		logs, _ := json.MarshalIndent(receipt.Logs, "", "\t")
+		rec.Logs = string(logs)
+		rec.LogsBloom = receipt.LogsBloom
+		str, _ := json.Marshal(rec)
+		rpcResult = RPCResult{QueryResult: string(str), ErrorInfo: ""}
+	}
+	ret, _ := json.Marshal(rpcResult)
+	return string(ret)
 }
 
 func toGoParams(param string) ([]interface{}, error) {
